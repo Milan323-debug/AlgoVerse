@@ -98,6 +98,11 @@ export const renderVideo = async (req, res) => {
 
     console.log(`[Video API] Rendering ${steps.length} steps (${durationInFrames} frames)`);
 
+    // Resolve pre-installed browser path inside Docker (avoids downloading Chrome on Render)
+    const browserExecutable = fs.existsSync('/usr/bin/google-chrome')
+      ? '/usr/bin/google-chrome'
+      : undefined;
+
     // 2. Retrieve or build the Remotion bundle
     const bundleLocation = await getRemotionBundle();
 
@@ -106,6 +111,7 @@ export const renderVideo = async (req, res) => {
       serveUrl: bundleLocation,
       id: 'AlgoVisualizer',
       inputProps: { algoId, arrayData, target },
+      browserExecutable,
     });
 
     // Ensure output directory exists
@@ -128,6 +134,10 @@ export const renderVideo = async (req, res) => {
       codec: 'h264',
       outputLocation: localOutputPath,
       inputProps: { algoId, arrayData, target },
+      browserExecutable,
+      chromiumOptions: {
+        enableMultiProcessOnLinux: false, // Prevents OOM crashes by running Chromium in single-process mode
+      }
     });
     console.log('[Remotion] Render completed successfully!');
 
