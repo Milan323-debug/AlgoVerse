@@ -127,3 +127,31 @@ export const toggleBookmark = async (req, res) => {
         res.status(500).json({ message: "Failed to toggle bookmark" });
     }
 };
+
+export const resetProgress = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+
+        user.xp = 0;
+        user.level = 1;
+        user.streak = 0;
+        user.completedLessons = [];
+        user.solvedChallenges = [];
+        user.bookmarkedChallenges = [];
+
+        await user.save();
+
+        res.status(200).json({
+            xp: user.xp,
+            level: user.level,
+            streak: user.streak,
+            completedLessons: user.completedLessons,
+            solvedChallenges: user.solvedChallenges,
+            bookmarkedChallenges: user.bookmarkedChallenges,
+            ...calcLevel(user.xp)
+        });
+    } catch (error) {
+        console.error("Error in resetProgress:", error.message);
+        res.status(500).json({ message: "Failed to reset progress" });
+    }
+};

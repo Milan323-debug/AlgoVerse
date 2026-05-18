@@ -1,5 +1,5 @@
 import express from "express";
-import { getProgress, completeLesson, solveChallenge, toggleBookmark } from "../controllers/userController.js";
+import { getProgress, completeLesson, solveChallenge, toggleBookmark, resetProgress } from "../controllers/userController.js";
 import { protectRoute } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(protectRoute);
 
 router.get("/progress", getProgress);
+router.post("/progress/reset", resetProgress);
 router.post("/lesson/complete", completeLesson);
 router.post("/challenge/solve", solveChallenge);
 router.post("/challenge/bookmark", toggleBookmark);
