@@ -155,3 +155,16 @@ export const resetProgress = async (req, res) => {
         res.status(500).json({ message: "Failed to reset progress" });
     }
 };
+
+export const getLeaderboard = async (req, res) => {
+    try {
+        const users = await User.find({})
+            .sort({ xp: -1 })
+            .select("username profileImage xp streak level")
+            .limit(50);
+        res.status(200).json(users);
+    } catch (error) {
+        console.error("Error in getLeaderboard:", error.message);
+        res.status(500).json({ message: "Failed to fetch leaderboard data" });
+    }
+};
