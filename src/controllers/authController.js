@@ -90,22 +90,41 @@ export const logout = (req, res) => {
 
 export const githubAuthRedirect = (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
-    // We pass the redirect URI to GitHub, which must match the Render backend callback
-    const redirectUri = process.env.GITHUB_CALLBACK_URL || 'https://algoverse-1-5cvc.onrender.com/api/auth/github/callback';
+    const redirectUri = 'https://algoverse-1-5cvc.onrender.com/api/auth/github/callback';
 
-    const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=user:email`;
+    // The mobile app sends its own redirect URL so we know where to send the user back.
+    // We encode it into the OAuth "state" parameter so it survives the GitHub round-trip.
+    const mobileRedirect = req.query.mobile_redirect || 'algoverse://login';
+    const state = Buffer.from(JSON.stringify({ mobile_redirect: mobileRedirect })).toString('base64');
+
+    const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=user:email&state=${encodeURIComponent(state)}`;
 
     res.redirect(githubAuthUrl);
 };
 
 export const githubCallback = async (req, res) => {
     try {
-        const { code } = req.query;
+        const { code, state } = req.query;
         if (!code) {
             return res.status(400).json({ message: "Authorization code is required" });
         }
 
-        // Exchange code for access token
+        // Decode the mobile redirect URL from the state parameter
+        let mobileRedirect = 'algoverse://login';
+        if (state) {
+            try {
+                const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+                if (stateData.mobile_redirect) {
+                    mobileRedirect = stateData.mobile_redirect;
+                }
+            } catch (e) {
+                console.warn("Failed to parse state parameter:", e.message);
+            }
+        }
+
+        const redirectUri = 'https://algoverse-1-5cvc.onrender.com/api/auth/github/callback';
+
+        // Exchange code for access token (include redirect_uri as required by GitHub spec)
         const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
             method: "POST",
             headers: {
@@ -116,6 +135,7 @@ export const githubCallback = async (req, res) => {
                 client_id: process.env.GITHUB_CLIENT_ID,
                 client_secret: process.env.GITHUB_CLIENT_SECRET,
                 code,
+                redirect_uri: redirectUri,
             }),
         });
 
@@ -123,7 +143,8 @@ export const githubCallback = async (req, res) => {
         const accessToken = tokenData.access_token;
 
         if (!accessToken) {
-            return res.redirect(`algoverse://login?error=Failed_to_exchange_code`);
+            console.error("GitHub token exchange failed:", tokenData);
+            return res.redirect(`${mobileRedirect}?error=Failed_to_exchange_code`);
         }
 
         // Fetch user data from GitHub
@@ -134,7 +155,7 @@ export const githubCallback = async (req, res) => {
         });
 
         if (!githubUserRes.ok) {
-            return res.redirect(`algoverse://login?error=Invalid_GitHub_token`);
+            return res.redirect(`${mobileRedirect}?error=Invalid_GitHub_token`);
         }
 
         const githubUser = await githubUserRes.json();
@@ -156,7 +177,7 @@ export const githubCallback = async (req, res) => {
         }
 
         if (!primaryEmail) {
-            return res.redirect(`algoverse://login?error=No_email_associated_with_this_GitHub_account`);
+            return res.redirect(`${mobileRedirect}?error=No_email_associated_with_this_GitHub_account`);
         }
 
         let user = await User.findOne({
@@ -187,10 +208,11 @@ export const githubCallback = async (req, res) => {
             profileImage: user.profileImage,
         };
 
-        // Redirect back to the Expo app via deep link with token and user data
-        res.redirect(`algoverse://login?token=${token}&userData=${encodeURIComponent(JSON.stringify(userData))}`);
+        // Redirect back to the mobile app via deep link with token and user data
+        res.redirect(`${mobileRedirect}?token=${token}&userData=${encodeURIComponent(JSON.stringify(userData))}`);
     } catch (error) {
         console.log("Error in githubCallback controller", error.message);
         res.redirect(`algoverse://login?error=Internal_Server_Error`);
     }
 };
+
