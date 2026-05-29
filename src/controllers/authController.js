@@ -1,3 +1,4 @@
+
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import { generateToken } from "../lib/utils.js";
@@ -90,10 +91,10 @@ export const logout = (req, res) => {
 export const githubAuthRedirect = (req, res) => {
     const clientId = process.env.GITHUB_CLIENT_ID;
     // We pass the redirect URI to GitHub, which must match the Render backend callback
-    const redirectUri = process.env.GITHUB_CALLBACK_URL || 'https://algoverse-uzz5.onrender.com/api/auth/github/callback';
-    
+    const redirectUri = process.env.GITHUB_CALLBACK_URL || 'https://algoverse-1-5cvc.onrender.com/api/auth/github/callback';
+
     const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=user:email`;
-    
+
     res.redirect(githubAuthUrl);
 };
 
@@ -131,20 +132,20 @@ export const githubCallback = async (req, res) => {
                 Authorization: `Bearer ${accessToken}`,
             },
         });
-        
+
         if (!githubUserRes.ok) {
             return res.redirect(`algoverse://login?error=Invalid_GitHub_token`);
         }
-        
+
         const githubUser = await githubUserRes.json();
-        
+
         // Fetch user emails from GitHub
         const githubEmailsRes = await fetch("https://api.github.com/user/emails", {
             headers: {
                 Authorization: `Bearer ${accessToken}`,
             },
         });
-        
+
         let primaryEmail = githubUser.email;
         if (githubEmailsRes.ok) {
             const emails = await githubEmailsRes.json();
@@ -158,7 +159,7 @@ export const githubCallback = async (req, res) => {
             return res.redirect(`algoverse://login?error=No_email_associated_with_this_GitHub_account`);
         }
 
-        let user = await User.findOne({ 
+        let user = await User.findOne({
             $or: [{ githubId: githubUser.id.toString() }, { email: primaryEmail }]
         });
 
