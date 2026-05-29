@@ -1,10 +1,12 @@
 import express from "express";
-import { signup, signin, logout } from "../controllers/authController.js";
+import { signup, signin, logout, githubAuthRedirect, githubCallback } from "../controllers/authController.js";
 
 const router = express.Router();
 
 router.post("/signup", signup);
 router.post("/signin", signin);
 router.post("/logout", logout);
+router.get("/github", githubAuthRedirect);
+router.get("/github/callback", githubCallback);
 
 export default router;

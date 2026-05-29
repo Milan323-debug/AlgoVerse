@@ -17,7 +17,15 @@ const userSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true,
+        required: function() {
+            // Password is required only if the user hasn't logged in with a social provider
+            return !this.githubId;
+        },
+    },
+    githubId: {
+        type: String,
+        sparse: true,
+        unique: true
     },
     profileImage: {
         type: String,
