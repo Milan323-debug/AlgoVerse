@@ -58,6 +58,10 @@ export const signin = async (req, res) => {
             return res.status(404).json({ message: "Email not found" });
         }
 
+        if (!user.password) {
+            return res.status(400).json({ message: "This account is linked with GitHub. Please sign in with GitHub." });
+        }
+
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
         if (!isPasswordCorrect) {
             return res.status(400).json({ message: "Invalid credentials" });
