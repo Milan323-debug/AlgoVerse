@@ -17,9 +17,49 @@ function calcLevel(totalXp) {
   };
 }
 
+function checkAndUpdateStreak(user, isActiveAction) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (!user.lastActiveDate) {
+        if (isActiveAction) {
+            user.streak = 1;
+            user.lastActiveDate = new Date();
+        } else {
+            user.streak = 0;
+        }
+        return;
+    }
+
+    const lastActive = new Date(user.lastActiveDate);
+    lastActive.setHours(0, 0, 0, 0);
+
+    const diffTime = today.getTime() - lastActive.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays > 1) {
+        // Missed a day -> reset streak
+        user.streak = 0;
+        if (isActiveAction) {
+            user.streak = 1;
+            user.lastActiveDate = new Date();
+        }
+    } else if (diffDays === 1 && isActiveAction) {
+        // Active next day -> increment streak
+        user.streak += 1;
+        user.lastActiveDate = new Date();
+    } else if (diffDays === 0 && isActiveAction) {
+         // Already active today
+         user.lastActiveDate = new Date();
+    }
+}
+
 export const getProgress = async (req, res) => {
     try {
         const user = await User.findById(req.user._id).select("-password");
+        checkAndUpdateStreak(user, false);
+        await user.save();
+        
         res.status(200).json({
             xp: user.xp,
             level: user.level,
@@ -53,12 +93,14 @@ export const completeLesson = async (req, res) => {
             const levelInfo = calcLevel(user.xp);
             user.level = levelInfo.level;
         }
-
+        
+        checkAndUpdateStreak(user, true);
         await user.save();
 
         res.status(200).json({
             xp: user.xp,
             level: user.level,
+            streak: user.streak,
             completedLessons: user.completedLessons,
             ...calcLevel(user.xp)
         });
@@ -85,12 +127,14 @@ export const solveChallenge = async (req, res) => {
             const levelInfo = calcLevel(user.xp);
             user.level = levelInfo.level;
         }
-
+        
+        checkAndUpdateStreak(user, true);
         await user.save();
 
         res.status(200).json({
             xp: user.xp,
             level: user.level,
+            streak: user.streak,
             solvedChallenges: user.solvedChallenges,
             ...calcLevel(user.xp)
         });
@@ -135,6 +179,7 @@ export const resetProgress = async (req, res) => {
         user.xp = 0;
         user.level = 1;
         user.streak = 0;
+        user.lastActiveDate = null;
         user.completedLessons = [];
         user.solvedChallenges = [];
         user.bookmarkedChallenges = [];
