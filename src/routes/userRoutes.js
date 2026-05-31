@@ -1,6 +1,7 @@
 import express from "express";
-import { getProgress, completeLesson, solveChallenge, toggleBookmark, resetProgress, getLeaderboard } from "../controllers/userController.js";
+import { getProgress, completeLesson, solveChallenge, toggleBookmark, resetProgress, getLeaderboard, updateProfile } from "../controllers/userController.js";
 import { protectRoute } from "../middleware/authMiddleware.js";
+import upload from "../middleware/upload.js";
 
 const router = express.Router();
 
@@ -9,6 +10,7 @@ router.use(protectRoute);
 
 router.get("/progress", getProgress);
 router.get("/leaderboard", getLeaderboard);
+router.put("/profile", upload.single('profileImage'), updateProfile);
 router.post("/progress/reset", resetProgress);
 router.post("/lesson/complete", completeLesson);
 router.post("/challenge/solve", solveChallenge);
