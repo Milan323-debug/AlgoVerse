@@ -72,7 +72,7 @@ export const signup = async (req, res) => {
         }
     } catch (error) {
         console.log("Error in signup controller", error.message);
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ message: error.message || "Internal Server Error" });
     }
 };
 
@@ -125,7 +125,7 @@ export const signin = async (req, res) => {
         });
     } catch (error) {
         console.log("Error in signin controller", error.message);
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ message: error.message || "Internal Server Error" });
     }
 };
 
@@ -424,7 +424,7 @@ export const verifyOTP = async (req, res) => {
         });
     } catch (error) {
         console.log("Error in verifyOTP controller", error.message);
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ message: error.message || "Internal Server Error" });
     }
 };
 
@@ -456,7 +456,7 @@ export const resendOTP = async (req, res) => {
         res.status(200).json({ message: "Verification code resent successfully" });
     } catch (error) {
         console.log("Error in resendOTP controller", error.message);
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ message: error.message || "Internal Server Error" });
     }
 };
 
