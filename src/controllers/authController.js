@@ -59,7 +59,7 @@ export const signin = async (req, res) => {
         }
 
         if (!user.password) {
-            return res.status(400).json({ message: "This account is linked with GitHub. Please sign in with GitHub." });
+            return res.status(400).json({ message: "This account is linked with a social provider (GitHub or Google). Please sign in with the appropriate provider." });
         }
 
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
@@ -220,3 +220,112 @@ export const githubCallback = async (req, res) => {
     }
 };
 
+
+export const googleAuthRedirect = (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const redirectUri = 'https://algoverse-1-5cvc.onrender.com/api/auth/google/callback';
+
+    const mobileRedirect = req.query.mobile_redirect || 'algoverse://login';
+    const state = Buffer.from(JSON.stringify({ mobile_redirect: mobileRedirect })).toString('base64');
+
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${clientId}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=${encodeURIComponent('openid email profile')}` +
+        `&state=${encodeURIComponent(state)}` +
+        `&access_type=offline` +
+        `&prompt=select_account`;
+
+    res.redirect(googleAuthUrl);
+};
+
+export const googleCallback = async (req, res) => {
+    try {
+        const { code, state, error } = req.query;
+
+        let mobileRedirect = 'algoverse://login';
+        if (state) {
+            try {
+                const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+                if (stateData.mobile_redirect) {
+                    mobileRedirect = stateData.mobile_redirect;
+                }
+            } catch (e) {
+                console.warn('Failed to parse state parameter:', e.message);
+            }
+        }
+
+        if (error || !code) {
+            return res.redirect(`${mobileRedirect}?error=${error || 'Authorization_code_missing'}`);
+        }
+
+        const redirectUri = 'https://algoverse-1-5cvc.onrender.com/api/auth/google/callback';
+
+        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                code,
+                client_id: process.env.GOOGLE_CLIENT_ID,
+                client_secret: process.env.GOOGLE_CLIENT_SECRET,
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code',
+            }),
+        });
+
+        const tokenData = await tokenRes.json();
+
+        if (!tokenData.access_token) {
+            console.error('Google token exchange failed:', tokenData);
+            return res.redirect(`${mobileRedirect}?error=Failed_to_exchange_code`);
+        }
+
+        const googleUserRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+
+        if (!googleUserRes.ok) {
+            return res.redirect(`${mobileRedirect}?error=Invalid_Google_token`);
+        }
+
+        const googleUser = await googleUserRes.json();
+
+        if (!googleUser.email) {
+            return res.redirect(`${mobileRedirect}?error=No_email_associated_with_this_Google_account`);
+        }
+
+        let user = await User.findOne({
+            $or: [{ googleId: googleUser.id }, { email: googleUser.email }]
+        });
+
+        if (user) {
+            if (!user.googleId) {
+                user.googleId = googleUser.id;
+                await user.save();
+            }
+        } else {
+            user = new User({
+                username: googleUser.name || googleUser.email.split('@')[0],
+                email: googleUser.email,
+                googleId: googleUser.id,
+                profileImage: googleUser.picture || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+            });
+            await user.save();
+        }
+
+        const token = generateToken(user._id, res);
+
+        const userData = {
+            _id: user._id,
+            username: user.username,
+            email: user.email,
+            profileImage: user.profileImage,
+        };
+
+        res.redirect(`${mobileRedirect}?token=${token}&userData=${encodeURIComponent(JSON.stringify(userData))}`);
+    } catch (error) {
+        console.log('Error in googleCallback controller', error.message);
+        res.redirect('algoverse://login?error=Internal_Server_Error');
+    }
+};
