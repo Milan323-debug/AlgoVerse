@@ -37,6 +37,8 @@ const userSchema = new mongoose.Schema({
         default: "https://cdn-icons-png.flaticon.com/512/149/149071.png"
     },
     isVerified: { type: Boolean, default: false },
+    verificationOTP: { type: String },
+    verificationOTPExpires: { type: Date },
     role: { type: String, enum: ["admin", "user"], default: "user" },
     xp: { type: Number, default: 0 },
     streak: { type: Number, default: 0 },

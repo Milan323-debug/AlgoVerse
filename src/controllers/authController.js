@@ -2,6 +2,7 @@
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import { generateToken } from "../lib/utils.js";
+import { sendVerificationEmail } from "../lib/mailer.js";
 
 export const signup = async (req, res) => {
     try {
@@ -15,9 +16,34 @@ export const signup = async (req, res) => {
             return res.status(400).json({ message: "Password must be at least 6 characters" });
         }
 
-        const existingUser = await User.findOne({ email });
+        const emailLower = email.trim().toLowerCase();
+        const existingUser = await User.findOne({ email: emailLower });
+        
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
         if (existingUser) {
-            return res.status(400).json({ message: "Email already exists" });
+            if (existingUser.isVerified) {
+                return res.status(400).json({ message: "Email already exists" });
+            }
+            
+            // If the user signed up before but never verified, overwrite their profile info and send a new OTP
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+            
+            existingUser.username = username;
+            existingUser.password = hashedPassword;
+            existingUser.verificationOTP = otp;
+            existingUser.verificationOTPExpires = otpExpires;
+            
+            await existingUser.save();
+            await sendVerificationEmail(emailLower, username, otp);
+            
+            return res.status(200).json({
+                message: "Verification code sent to your email",
+                email: emailLower,
+                isVerified: false
+            });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -25,20 +51,21 @@ export const signup = async (req, res) => {
 
         const newUser = new User({
             username,
-            email,
+            email: emailLower,
             password: hashedPassword,
+            isVerified: false,
+            verificationOTP: otp,
+            verificationOTPExpires: otpExpires,
         });
 
         if (newUser) {
             await newUser.save();
-            const token = generateToken(newUser._id, res);
+            await sendVerificationEmail(emailLower, username, otp);
 
             res.status(201).json({
-                _id: newUser._id,
-                username: newUser.username,
-                email: newUser.email,
-                profileImage: newUser.profileImage,
-                token
+                message: "Verification code sent to your email",
+                email: emailLower,
+                isVerified: false
             });
         } else {
             res.status(400).json({ message: "Invalid user data" });
@@ -53,7 +80,8 @@ export const signin = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email });
+        const emailLower = email.trim().toLowerCase();
+        const user = await User.findOne({ email: emailLower });
         if (!user) {
             return res.status(404).json({ message: "Email not found" });
         }
@@ -65,6 +93,25 @@ export const signin = async (req, res) => {
         const isPasswordCorrect = await bcrypt.compare(password, user.password);
         if (!isPasswordCorrect) {
             return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        if (!user.isVerified) {
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            user.verificationOTP = otp;
+            user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
+            await user.save();
+
+            try {
+                await sendVerificationEmail(emailLower, user.username, otp);
+            } catch (err) {
+                console.log("Error sending email on unverified signin", err.message);
+            }
+
+            return res.status(403).json({
+                message: "Please verify your email address. A fresh code has been sent to your email.",
+                email: emailLower,
+                isVerified: false,
+            });
         }
 
         const token = generateToken(user._id, res);
@@ -329,3 +376,87 @@ export const googleCallback = async (req, res) => {
         res.redirect('algoverse://login?error=Internal_Server_Error');
     }
 };
+
+export const verifyOTP = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({ message: "Email and verification code are required" });
+        }
+
+        const emailLower = email.trim().toLowerCase();
+        const user = await User.findOne({ email: emailLower });
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (user.isVerified) {
+            const token = generateToken(user._id, res);
+            return res.status(200).json({
+                message: "Email already verified",
+                _id: user._id,
+                username: user.username,
+                email: user.email,
+                profileImage: user.profileImage,
+                token
+            });
+        }
+
+        if (user.verificationOTP !== otp.trim() || user.verificationOTPExpires < Date.now()) {
+            return res.status(400).json({ message: "Invalid or expired verification code" });
+        }
+
+        user.isVerified = true;
+        user.verificationOTP = undefined;
+        user.verificationOTPExpires = undefined;
+        await user.save();
+
+        const token = generateToken(user._id, res);
+
+        res.status(200).json({
+            message: "Email verified successfully",
+            _id: user._id,
+            username: user.username,
+            email: user.email,
+            profileImage: user.profileImage,
+            token
+        });
+    } catch (error) {
+        console.log("Error in verifyOTP controller", error.message);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+export const resendOTP = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+
+        const emailLower = email.trim().toLowerCase();
+        const user = await User.findOne({ email: emailLower });
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (user.isVerified) {
+            return res.status(400).json({ message: "Email already verified" });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.verificationOTP = otp;
+        user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
+        await user.save();
+
+        await sendVerificationEmail(emailLower, user.username, otp);
+
+        res.status(200).json({ message: "Verification code resent successfully" });
+    } catch (error) {
+        console.log("Error in resendOTP controller", error.message);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
