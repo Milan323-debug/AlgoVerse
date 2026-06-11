@@ -37,7 +37,13 @@ export const signup = async (req, res) => {
             existingUser.verificationOTPExpires = otpExpires;
             
             await existingUser.save();
-            await sendVerificationEmail(emailLower, username, otp);
+
+            try {
+                await sendVerificationEmail(emailLower, username, otp);
+            } catch (emailError) {
+                console.error("Email send failed during signup (existing user):", emailError.message);
+                return res.status(503).json({ message: emailError.message });
+            }
             
             return res.status(200).json({
                 message: "Verification code sent to your email",
@@ -60,7 +66,13 @@ export const signup = async (req, res) => {
 
         if (newUser) {
             await newUser.save();
-            await sendVerificationEmail(emailLower, username, otp);
+
+            try {
+                await sendVerificationEmail(emailLower, username, otp);
+            } catch (emailError) {
+                console.error("Email send failed during signup (new user):", emailError.message);
+                return res.status(503).json({ message: emailError.message });
+            }
 
             res.status(201).json({
                 message: "Verification code sent to your email",
@@ -104,7 +116,8 @@ export const signin = async (req, res) => {
             try {
                 await sendVerificationEmail(emailLower, user.username, otp);
             } catch (err) {
-                console.log("Error sending email on unverified signin", err.message);
+                console.error("Error sending email on unverified signin:", err.message);
+                return res.status(503).json({ message: err.message });
             }
 
             return res.status(403).json({
@@ -451,7 +464,12 @@ export const resendOTP = async (req, res) => {
         user.verificationOTPExpires = new Date(Date.now() + 10 * 60 * 1000);
         await user.save();
 
-        await sendVerificationEmail(emailLower, user.username, otp);
+        try {
+            await sendVerificationEmail(emailLower, user.username, otp);
+        } catch (emailError) {
+            console.error("Email send failed during resendOTP:", emailError.message);
+            return res.status(503).json({ message: emailError.message });
+        }
 
         res.status(200).json({ message: "Verification code resent successfully" });
     } catch (error) {
