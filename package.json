@@ -27,7 +27,8 @@
     "nodemailer": "^8.0.11",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "remotion": "^4.0.462"
+    "remotion": "^4.0.462",
+    "resend": "^6.12.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
