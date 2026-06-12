@@ -39,6 +39,8 @@ const userSchema = new mongoose.Schema({
     isVerified: { type: Boolean, default: false },
     verificationOTP: { type: String },
     verificationOTPExpires: { type: Date },
+    resetOTP: { type: String },
+    resetOTPExpires: { type: Date },
     role: { type: String, enum: ["admin", "user"], default: "user" },
     xp: { type: Number, default: 0 },
     streak: { type: Number, default: 0 },

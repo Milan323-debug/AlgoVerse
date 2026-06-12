@@ -2,7 +2,7 @@
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import { generateToken } from "../lib/utils.js";
-import { sendVerificationEmail } from "../lib/mailer.js";
+import { sendVerificationEmail, sendResetPasswordEmail } from "../lib/mailer.js";
 
 export const signup = async (req, res) => {
     try {
@@ -504,6 +504,89 @@ export const resendOTP = async (req, res) => {
         res.status(200).json({ message: "Verification code resent successfully" });
     } catch (error) {
         console.log("Error in resendOTP controller", error.message);
+        res.status(500).json({ message: error.message || "Internal Server Error" });
+    }
+};
+
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+
+        const emailLower = email.trim().toLowerCase();
+        const user = await User.findOne({ email: emailLower });
+
+        if (!user) {
+            return res.status(404).json({ message: "Email not found" });
+        }
+
+        // Check if account has no password set (OAuth only user)
+        if (!user.password || user.googleId || user.githubId) {
+            return res.status(400).json({
+                message: "This email is registered using a social provider (Google or GitHub). Please sign in using that provider."
+            });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.resetOTP = otp;
+        user.resetOTPExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        await user.save();
+
+        try {
+            await sendResetPasswordEmail(emailLower, user.username, otp);
+        } catch (emailError) {
+            console.error("Email send failed during forgotPassword:", emailError.message);
+            return res.status(503).json({ message: emailError.message });
+        }
+
+        res.status(200).json({ message: "Password reset verification code sent to your email." });
+    } catch (error) {
+        console.log("Error in forgotPassword controller", error.message);
+        res.status(500).json({ message: error.message || "Internal Server Error" });
+    }
+};
+
+export const resetPassword = async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ message: "Email, verification code (OTP), and new password are required" });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ message: "Password must be at least 6 characters" });
+        }
+
+        const emailLower = email.trim().toLowerCase();
+        const user = await User.findOne({ email: emailLower });
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        if (!user.resetOTP || user.resetOTP !== otp.trim() || user.resetOTPExpires < Date.now()) {
+            return res.status(400).json({ message: "Invalid or expired password reset verification code" });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        user.password = hashedPassword;
+        user.resetOTP = undefined;
+        user.resetOTPExpires = undefined;
+        
+        // Also ensure user is verified if they reset their password successfully
+        user.isVerified = true;
+        
+        await user.save();
+
+        res.status(200).json({ message: "Password reset successfully. You can now sign in with your new password." });
+    } catch (error) {
+        console.log("Error in resetPassword controller", error.message);
         res.status(500).json({ message: error.message || "Internal Server Error" });
     }
 };
