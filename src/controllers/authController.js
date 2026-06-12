@@ -19,15 +19,41 @@ export const signup = async (req, res) => {
         const emailLower = email.trim().toLowerCase();
         const existingUser = await User.findOne({ email: emailLower });
         
+        // Ensure username uniqueness among verified users
+        const existingUsername = await User.findOne({ username, isVerified: true });
+        if (existingUsername) {
+            return res.status(400).json({ message: "Username is already taken" });
+        }
+
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         if (existingUser) {
+            // 1. If the existing user is verified, block signup
             if (existingUser.isVerified) {
-                return res.status(400).json({ message: "Email already exists" });
+                return res.status(400).json({ message: "Email is already in use" });
             }
             
-            // If the user signed up before but never verified, overwrite their profile info and send a new OTP
+            // 2. If the existing user signed up via social login, block overwriting
+            if (existingUser.githubId || existingUser.googleId) {
+                return res.status(400).json({ 
+                    message: "This email is registered with a social provider (Google or GitHub). Please sign in using that provider." 
+                });
+            }
+
+            // 3. If a different username is trying to claim this unverified email,
+            // block it if the active OTP has not expired yet to prevent hijacking/spam.
+            if (existingUser.username !== username) {
+                const now = new Date();
+                if (existingUser.verificationOTPExpires && existingUser.verificationOTPExpires > now) {
+                    return res.status(400).json({ 
+                        message: "A verification code is already active for this email address. Please verify it or wait for the code to expire." 
+                    });
+                }
+            }
+            
+            // If the user signed up before but never verified (and is same user, or previous code expired),
+            // safely overwrite the details and send a new OTP.
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
             
@@ -249,8 +275,9 @@ export const githubCallback = async (req, res) => {
         });
 
         if (user) {
-            if (!user.githubId) {
+            if (!user.githubId || !user.isVerified) {
                 user.githubId = githubUser.id.toString();
+                user.isVerified = true;
                 await user.save();
             }
         } else {
@@ -259,6 +286,7 @@ export const githubCallback = async (req, res) => {
                 email: primaryEmail,
                 githubId: githubUser.id.toString(),
                 profileImage: githubUser.avatar_url || "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+                isVerified: true,
             });
             await user.save();
         }
@@ -360,8 +388,9 @@ export const googleCallback = async (req, res) => {
         });
 
         if (user) {
-            if (!user.googleId) {
+            if (!user.googleId || !user.isVerified) {
                 user.googleId = googleUser.id;
+                user.isVerified = true;
                 await user.save();
             }
         } else {
@@ -370,6 +399,7 @@ export const googleCallback = async (req, res) => {
                 email: googleUser.email,
                 googleId: googleUser.id,
                 profileImage: googleUser.picture || 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+                isVerified: true,
             });
             await user.save();
         }
