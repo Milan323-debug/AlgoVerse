@@ -1,15 +1,14 @@
-import * as sibSdk from "@getbrevo/brevo";
+import { BrevoClient } from "@getbrevo/brevo";
 
-let _apiInstance = null;
+let _client = null;
 
 function getBrevoClient() {
-    if (!_apiInstance) {
-        const defaultClient = sibSdk.ApiClient.instance;
-        const apiKey = defaultClient.authentications['api-key'];
-        apiKey.apiKey = process.env.BREVO_API_KEY;
-        _apiInstance = new sibSdk.TransactionalEmailsApi();
+    if (!_client) {
+        _client = new BrevoClient({
+            apiKey: process.env.BREVO_API_KEY
+        });
     }
-    return _apiInstance;
+    return _client;
 }
 
 export const sendVerificationEmail = async (email, username, otp) => {
@@ -24,11 +23,9 @@ export const sendVerificationEmail = async (email, username, otp) => {
         return;
     }
 
-    const apiInstance = getBrevoClient();
-    const sendSmtpEmail = new sibSdk.SendSmtpEmail();
+    const client = getBrevoClient();
 
-    sendSmtpEmail.subject = "Verify Your AlgoVerse Account";
-    sendSmtpEmail.htmlContent = `
+    const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #333; border-radius: 10px; background-color: #060816; color: #ffffff;">
             <div style="text-align: center; margin-bottom: 20px;">
                 <h2 style="color: #7C3AED; margin: 0; font-size: 28px;">Algo<span style="color: #06B6D4;">Verse</span></h2>
@@ -45,17 +42,20 @@ export const sendVerificationEmail = async (email, username, otp) => {
             <p style="font-size: 11px; color: rgba(255,255,255,0.3); text-align: center; margin: 0;">© ${new Date().getFullYear()} AlgoVerse. All rights reserved.</p>
         </div>
     `;
-    sendSmtpEmail.sender = { 
-        name: "AlgoVerse", 
-        email: process.env.BREVO_SENDER_EMAIL 
-    };
-    sendSmtpEmail.to = [{ email: email, name: username }];
 
     try {
-        const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log(`Verification email sent to ${email} (messageId: ${data.messageId})`);
+        const data = await client.transactionalEmails.sendTransacEmail({
+            subject: "Verify Your AlgoVerse Account",
+            htmlContent: htmlContent,
+            sender: { 
+                name: "AlgoVerse", 
+                email: process.env.BREVO_SENDER_EMAIL 
+            },
+            to: [{ email: email, name: username }]
+        });
+        console.log(`Verification email sent to ${email} (messageId: ${data.messageId || 'unknown'})`);
     } catch (error) {
-        console.error("Failed to send verification email via Brevo API:", error.response?.body || error.message);
+        console.error("Failed to send verification email via Brevo API:", error.message);
         throw new Error("Failed to send verification email. Please try again later.");
     }
 };
